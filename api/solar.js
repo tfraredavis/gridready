@@ -189,6 +189,130 @@ Only include months that are actually shown in the bill. Omit months with no dat
       }
     }
 
+    // ── PARSE ENERGY DOCUMENT ────────────────────────────────────────────────
+    // Handles utility bills, solar production reports, screenshots of graphs,
+    // Excel/CSV exports. Returns any combination of monthlyUsageKwh,
+    // monthlySolarKwh, and ratePerKwh depending on what the document contains.
+    // hint: "usage" | "solar" | "both" (tells Claude what to look for)
+    if (action === "parseEnergyDoc") {
+      if (!ANTHROPIC_KEY) return res.status(500).json({ error: "ANTHROPIC_API_KEY not configured" });
+
+      const { imageBase64, fileBase64, mediaType, hint } = req.body || {};
+      const isSpreadsheet = mediaType && (
+        mediaType.includes("spreadsheet") ||
+        mediaType.includes("excel") ||
+        mediaType.includes("csv") ||
+        mediaType.includes("text/plain") ||
+        mediaType === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" ||
+        mediaType === "application/vnd.ms-excel"
+      );
+
+      const hintText = hint === "solar"
+        ? "This document is a solar production report. Focus on extracting monthly solar energy production in kWh."
+        : hint === "usage"
+        ? "This document is a utility bill or energy usage report. Focus on extracting monthly electricity consumption in kWh and the per-kWh rate."
+        : "This document may contain utility usage data, solar production data, or both.";
+
+      const prompt = `You are analyzing an energy data document. It may be a utility bill, a solar production report, a screenshot of a graph or chart, an Excel spreadsheet, or a CSV file.
+
+${hintText}
+
+Your job: extract all energy data you can find. Specifically:
+
+1. Monthly electricity USAGE in kWh (from utility bills, usage history charts)
+2. Monthly SOLAR PRODUCTION in kWh (from solar monitoring reports, inverter exports)
+3. The utility rate in $/kWh (from utility bills — look for the energy charge rate)
+
+Rules:
+- Use 3-letter month abbreviations: Jan, Feb, Mar, Apr, May, Jun, Jul, Aug, Sep, Oct, Nov, Dec
+- Only include months where you can clearly read a value — do not guess
+- If a month appears twice, use the most recent value
+- For Excel/CSV: look at column headers to identify which columns contain usage vs solar vs date
+- For graphs/charts: read the approximate bar heights or line values for each month
+- For the rate: look for "energy charge", "per kWh", "$/kWh" — ignore taxes, fees, and demand charges
+
+Respond ONLY with valid JSON. Include only the keys that you found data for:
+{
+  "monthlyUsageKwh": {
+    "Jan": 806,
+    "Feb": 750
+  },
+  "monthlySolarKwh": {
+    "Jan": 200,
+    "Feb": 280
+  },
+  "ratePerKwh": 0.20
+}
+
+If you only find usage data, return only "monthlyUsageKwh".
+If you only find solar data, return only "monthlySolarKwh".
+If you find both, return both.
+If you find a rate, include "ratePerKwh".
+Never return keys with empty objects or null values.`;
+
+      try {
+        let messageContent;
+
+        if (isSpreadsheet && fileBase64) {
+          // For Excel/CSV: send as a document with text extraction
+          messageContent = [
+            {
+              type: "document",
+              source: {
+                type: "base64",
+                media_type: mediaType.includes("csv") ? "text/plain" : "application/pdf",
+                data: fileBase64,
+              },
+            },
+            { type: "text", text: prompt },
+          ];
+        } else if (imageBase64) {
+          // Image or PDF screenshot
+          messageContent = [
+            {
+              type: "image",
+              source: {
+                type: "base64",
+                media_type: mediaType || "image/jpeg",
+                data: imageBase64,
+              },
+            },
+            { type: "text", text: prompt },
+          ];
+        } else {
+          return res.status(400).json({ error: "No file data provided" });
+        }
+
+        const r = await fetch("https://api.anthropic.com/v1/messages", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-api-key": ANTHROPIC_KEY,
+            "anthropic-version": "2023-06-01",
+          },
+          body: JSON.stringify({
+            model: "claude-opus-4-5",
+            max_tokens: 1500,
+            messages: [{ role: "user", content: messageContent }],
+          }),
+        });
+
+        if (!r.ok) {
+          const err = await r.text();
+          return res.status(r.status).json({ error: "Claude API error", details: err });
+        }
+
+        const data = await r.json();
+        const text = data.content?.[0]?.text || "";
+        const clean = text.replace(/```json|```/g, "").trim();
+        const parsed = JSON.parse(clean);
+        return res.status(200).json(parsed);
+
+      } catch (err) {
+        return res.status(500).json({ error: "Energy document parsing failed", details: err.message });
+      }
+    }
+
     return res.status(400).json({ error: "Unknown POST action" });
   }
 
