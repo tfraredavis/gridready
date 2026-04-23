@@ -782,10 +782,11 @@ export default function BatteryProposalTool() {
       if (d.indefinite||!d.battOnly) return w;
       return (!w||d.battOnly<w.battOnly)?d:w;
     },null);
+    // best = highest total hours (battery + solar extension); indefinite always wins
+    const totalHours = d => d.indefinite ? Infinity : (d.battOnly||0) + (d.solarExtDays?d.solarExtDays*24:0);
     const best = backupData.reduce((b,d)=>{
       if (!d.battOnly&&!d.indefinite) return b;
-      if (d.indefinite) return d;
-      return (!b||d.battOnly>b.battOnly)?d:b;
+      return (!b||totalHours(d)>totalHours(b))?d:b;
     },null);
     const battName = selectedBrand==="Tesla"
       ?`Tesla Powerwall 3${battSel.pwdc>0?" + DC Expansion":""}`
@@ -821,8 +822,16 @@ export default function BatteryProposalTool() {
               <div style={{textAlign:"center",marginBottom:6}}>
                 <div style={{fontSize:11,color:"#4a5568",textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:2}}>Best case ({best.month})</div>
                 <div style={{fontSize:24,fontWeight:800,color:"#68D391"}}>
-                  {best.battOnly>=48?`${Math.round(best.battOnly/24)}d`:`${Math.round(best.battOnly)}h`}
+                  {(()=>{
+                    const t = (best.battOnly||0)+(best.solarExtDays?best.solarExtDays*24:0);
+                    return t>=48?`${Math.round(t/24)}d`:`${Math.round(t)}h`;
+                  })()}
                 </div>
+                {best.solarExtDays&&(
+                  <div style={{fontSize:9,color:"#4a5568"}}>
+                    {fmtH(best.battOnly)} battery + {fmtH(best.solarExtDays*24)} solar
+                  </div>
+                )}
               </div>
             )}
             {best?.indefinite&&(
