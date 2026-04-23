@@ -238,6 +238,24 @@ function PanelGraphic({ breakers, onToggle, onRename, mainAmps }) {
   );
 }
 
+// ── Monthly grid — defined outside main component so it never remounts on re-render ──
+function MonthGrid({ values, onChange, accentColor }) {
+  const lbl = {fontSize:10,color:accentColor||"#718096",marginBottom:2,display:"block",fontWeight:500,letterSpacing:"0.05em",textTransform:"uppercase"};
+  const inp = {width:"100%",background:"#0f1623",border:"1px solid #2d3748",borderRadius:8,color:"#e2e8f0",padding:"4px 6px",fontSize:11,outline:"none",boxSizing:"border-box"};
+  return (
+    <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:5,marginTop:6}}>
+      {MONTHS.map(m=>(
+        <div key={m}>
+          <label style={lbl}>{m}</label>
+          <input type="number" style={inp}
+            placeholder="—" value={values[m]}
+            onChange={e=>onChange(p=>({...p,[m]:e.target.value}))}/>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // ── Main app ──────────────────────────────────────────────────────────────────
 export default function BatteryProposalTool() {
   const [step, setStep] = useState(0);
@@ -461,20 +479,6 @@ export default function BatteryProposalTool() {
       </div>
     );
   };
-
-  // ── Monthly grid helper ───────────────────────────────────────────────────────
-  const MonthGrid = ({ values, onChange, accentColor }) => (
-    <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:5,marginTop:6}}>
-      {MONTHS.map(m=>(
-        <div key={m}>
-          <label style={{...lbl,marginBottom:2,color:accentColor||"#718096"}}>{m}</label>
-          <input type="number" style={{...inp,padding:"4px 6px",fontSize:11}}
-            placeholder="—" value={values[m]}
-            onChange={e=>onChange(p=>({...p,[m]:e.target.value}))}/>
-        </div>
-      ))}
-    </div>
-  );
 
   // ── STEP 1 ────────────────────────────────────────────────────────────────────
   const renderStep1 = ()=>(
