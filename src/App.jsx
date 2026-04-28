@@ -331,9 +331,16 @@ export default function BatteryProposalTool(){
     let solarExtDays=null,indefinite=false;
     if(hasSolar!==false&&sNum>0){
       const net=(hourlyDemand*24)-(sNum/DAYS[i]);
-      if(net<=0) indefinite=true; else solarExtDays=tKwh/net;
+      if(net<=0){
+        indefinite=true;
+      } else {
+        solarExtDays=tKwh/net;
+        // If combined backup (battery + solar recharge) exceeds 30 days,
+        // treat as indefinite so the Y-axis stays readable for other months
+        if(battOnly+(solarExtDays*24) > 720) indefinite=true;
+      }
     }
-    return {month:m,battOnly,solarExtDays,indefinite};
+    return {month:m,battOnly,solarExtDays:indefinite?null:solarExtDays,indefinite};
   });
   // chartMaxH based on finite values only
   const finiteMaxH=Math.max(...backupData.map(d=>{
@@ -737,7 +744,6 @@ export default function BatteryProposalTool(){
             <div style={{fontSize:11,color:"#9AE6B4",fontWeight:600,textTransform:"uppercase",letterSpacing:"0.12em",marginBottom:6}}>Your Energy Resilience &amp; Savings</div>
             <div style={{fontSize:22,fontWeight:800,color:"#e2e8f0",marginBottom:4}}>{Math.round(tKwh*10)/10} kWh · {Math.round(tKw*10)/10} kW</div>
             <div style={{fontSize:13,color:"#68D391"}}>{battName}</div>
-            {priceNum>0&&<div style={{fontSize:18,fontWeight:700,color:"#FFD700",marginTop:8}}>System investment: ${priceNum.toLocaleString()}</div>}
           </div>
 
           {/* Backup chart — off-grid resilience */}
@@ -789,10 +795,7 @@ export default function BatteryProposalTool(){
               <span style={{color:"#718096"}}>Power output</span>
               <span style={{color:"#68D391"}}>{Math.round(tKw*10)/10} kW</span>
             </div>
-            {priceNum>0&&<div style={{display:"flex",justifyContent:"space-between",padding:"6px 0",borderBottom:"1px solid #1a202c",fontSize:13,fontWeight:600}}>
-              <span style={{color:"#718096"}}>System price</span>
-              <span style={{color:"#FFD700"}}>${priceNum.toLocaleString()}</span>
-            </div>}
+
 
             {/* % demand + critical loads */}
             {breakers.length>0&&<div style={{marginTop:12,paddingTop:12,borderTop:"1px solid #1a202c"}}>
@@ -809,6 +812,17 @@ export default function BatteryProposalTool(){
                 </div>}
             </div>}
           </div>
+
+          {/* System price — shown just above expert design */}
+          {priceNum>0&&<div style={{...card,border:"1px solid #4a3800",background:"#1a1700"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              <div>
+                <div style={{fontSize:13,fontWeight:600,color:"#D4A017"}}>System investment</div>
+                <div style={{fontSize:11,color:"#8a7030",marginTop:2}}>Total installed price</div>
+              </div>
+              <div style={{fontSize:26,fontWeight:800,color:"#FFD700"}}>${priceNum.toLocaleString()}</div>
+            </div>
+          </div>}
 
           {/* Expert design */}
           <ExpertDesign/>
