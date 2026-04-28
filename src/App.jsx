@@ -256,8 +256,16 @@ export default function BatteryProposalTool(){
 
   const critBreakers=breakers.filter(b=>b.critical);
   const allCritical=breakers.length>0&&critBreakers.length===breakers.length;
-  const totalBreakerA=breakers.reduce((s,b)=>s+b.amps,0);
-  const critBreakerA=critBreakers.reduce((s,b)=>s+b.amps,0);
+  // For amp calculations, deduplicate 2-pole pairs: two breakers same name = one circuit counted once
+  const dedup=arr=>{
+    const seen=new Set(); return arr.filter(b=>{
+      if(b.poles!==2) return true;
+      const key=b.name.trim().toLowerCase();
+      if(seen.has(key)) return false; seen.add(key); return true;
+    });
+  };
+  const totalBreakerA=dedup(breakers).reduce((s,b)=>s+b.amps,0);
+  const critBreakerA=dedup(critBreakers).reduce((s,b)=>s+b.amps,0);
   const demandPct=totalBreakerA>0?Math.round(critBreakerA/totalBreakerA*100):0;
   const maxOutputA=critBreakerA>0?Math.round(critBreakerA/1.25*10)/10:0;
   const critPct=breakers.length>0?critBreakers.length/breakers.length:0;
@@ -465,9 +473,8 @@ export default function BatteryProposalTool(){
       <div style={card}>
         <div style={{fontSize:13,fontWeight:600,color:"#e2e8f0",marginBottom:8}}>Solar system</div>
         <div style={{display:"flex",gap:8,marginBottom:12,flexWrap:"wrap"}}>
-          <button style={pill(hasSolar===true)}     onClick={()=>setHasSolar(true)}>Has solar</button>
-          <button style={pill(hasSolar===false)}    onClick={()=>setHasSolar(false)}>No solar</button>
-          <button style={pill(hasSolar==="future")} onClick={()=>setHasSolar("future")}>Will add solar</button>
+          <button style={pill(hasSolar===true)}  onClick={()=>setHasSolar(true)}>Yes</button>
+          <button style={pill(hasSolar===false)} onClick={()=>setHasSolar(false)}>No</button>
         </div>
         {hasSolar!==false&&(
           <div style={{display:"flex",gap:10,alignItems:"flex-end",flexWrap:"wrap"}}>
@@ -514,15 +521,11 @@ export default function BatteryProposalTool(){
       {/* Panel */}
       <div style={card}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
-          <div style={{fontSize:13,fontWeight:600,color:"#e2e8f0"}}>Electrical panel</div>
-          <div style={{display:"flex",gap:8,alignItems:"center"}}>
-            <div style={{display:"flex",alignItems:"center",gap:4}}>
-              <label style={{...lbl,marginBottom:0}}>Main</label>
-              <input type="number" style={{...inp,width:56,padding:"3px 6px",fontSize:11}} value={mainAmps} onChange={e=>setMainAmps(parseInt(e.target.value)||200)}/>
-              <span style={{fontSize:10,color:"#718096"}}>A</span>
-            </div>
-            <button style={{...btnG,fontSize:11}} onClick={()=>{setBreakers([]);setPanelFile(null);setPanelFileName("");}}>↺ Re-parse</button>
+          <div style={{display:"flex",alignItems:"center",gap:8}}>
+            <div style={{fontSize:13,fontWeight:600,color:"#e2e8f0"}}>Electrical panel</div>
+            {mainAmps>0&&<span style={{fontSize:11,color:"#a0aec0",background:"#0f1623",border:"1px solid #2d3748",borderRadius:6,padding:"2px 8px"}}>{mainAmps}A Main</span>}
           </div>
+          <button style={{...btnG,fontSize:11}} onClick={()=>{setBreakers([]);setPanelFile(null);setPanelFileName("");}}>↺ Re-parse</button>
         </div>
 
         {parsingPanel&&<div style={{fontSize:12,color:"#F6AD55",marginBottom:8}}>Reading your panel…</div>}
@@ -686,49 +689,35 @@ export default function BatteryProposalTool(){
             {priceNum>0&&<div style={{fontSize:18,fontWeight:700,color:"#FFD700",marginTop:8}}>System investment: ${priceNum.toLocaleString()}</div>}
           </div>
 
-          {/* Two panels */}
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-            <div style={{...card,background:"#0d1a10",borderColor:"#1a4030"}}>
-              <div style={{fontSize:11,fontWeight:600,color:"#9AE6B4",marginBottom:10,textAlign:"center",textTransform:"uppercase",letterSpacing:"0.08em"}}>Off-Grid Resilience</div>
-              {worst&&<div style={{textAlign:"center",marginBottom:8}}>
-                <div style={{fontSize:10,color:"#4a5568",textTransform:"uppercase",marginBottom:2}}>Worst case ({worst.month})</div>
-                <div style={{fontSize:24,fontWeight:800,color:"#4FD1C5"}}>{worst.battOnly>=48?`${Math.round(worst.battOnly/24)}d`:`${Math.round(worst.battOnly)}h`}</div>
-              </div>}
-              {best&&!best.indefinite&&<div style={{textAlign:"center",marginBottom:6}}>
-                <div style={{fontSize:10,color:"#4a5568",textTransform:"uppercase",marginBottom:2}}>Best case ({best.month})</div>
-                <div style={{fontSize:24,fontWeight:800,color:"#68D391"}}>{(()=>{const t=totalH(best);return t>=48?`${Math.round(t/24)}d`:`${Math.round(t)}h`;})()}</div>
-                {best.solarExtDays&&<div style={{fontSize:9,color:"#4a5568"}}>{fmtH(best.battOnly)} batt + {fmtH(best.solarExtDays*24)} solar</div>}
-              </div>}
-              {best?.indefinite&&<div style={{textAlign:"center",marginBottom:6}}>
-                <div style={{fontSize:10,color:"#4a5568",textTransform:"uppercase",marginBottom:2}}>Best case ({best.month})</div>
-                <div style={{fontSize:20,fontWeight:800,color:"#68D391"}}>Indefinite ∞</div>
-                <div style={{fontSize:9,color:"#4a5568"}}>solar covers full demand</div>
-              </div>}
-              <div style={{fontSize:10,color:"#4a5568",textAlign:"center",marginTop:4}}>{demandPct}% demand</div>
-            </div>
-            <div style={{...card,background:"#1a1700",borderColor:"#4a3800"}}>
-              <div style={{fontSize:11,fontWeight:600,color:"#D4A017",marginBottom:10,textAlign:"center",textTransform:"uppercase",letterSpacing:"0.08em"}}>On-Grid Savings</div>
-              <div style={{textAlign:"center",marginBottom:6}}>
-                <div style={{fontSize:24,fontWeight:800,color:"#FFD700"}}>${vpp10Year.toLocaleString()}</div>
-                <div style={{fontSize:10,color:"#8a7030"}}>10-year VPP value</div>
-              </div>
-              <div style={{fontSize:10,color:"#4a3800",textAlign:"center"}}>${vppOneTime.toLocaleString()} one-time + ${vppAnnual.toLocaleString()}/yr</div>
-            </div>
-          </div>
-
-          {/* Backup chart */}
+          {/* Backup chart — off-grid resilience */}
           {backupData.some(d=>d.battOnly||d.indefinite)&&<div style={card}>
-            <div style={{fontSize:12,fontWeight:600,color:"#a0aec0",marginBottom:12}}>Backup duration by month (hours)</div>
-            {renderBackupBars(140)}
+            <div style={{fontSize:12,fontWeight:600,color:"#9AE6B4",marginBottom:4}}>Off-Grid Resilience</div>
+            <div style={{fontSize:11,color:"#718096",marginBottom:12}}>Battery backup duration by month</div>
+            {renderBackupBars(160)}
+            <div style={{display:"flex",gap:14,marginTop:10,justifyContent:"center",flexWrap:"wrap"}}>
+              <div style={{display:"flex",alignItems:"center",gap:4,fontSize:10,color:"#718096"}}><div style={{width:10,height:10,background:"#4FD1C5",borderRadius:2}}/> Battery only</div>
+              {hasSolar!==false&&<div style={{display:"flex",alignItems:"center",gap:4,fontSize:10,color:"#718096"}}><div style={{width:10,height:10,background:"#F6AD55",borderRadius:2}}/> + Solar recharge</div>}
+            </div>
           </div>}
 
-          {/* VPP chart */}
-          {vppAnnual>0&&<div style={card}>
-            <div style={{fontSize:12,fontWeight:600,color:"#a0aec0",marginBottom:8}}>Cumulative VPP earnings — 10 years</div>
+          {/* On-grid savings: summary + VPP chart combined */}
+          {vppAnnual>0&&<div style={{...card,background:"#1a1700",borderColor:"#4a3800"}}>
+            <div style={{fontSize:12,fontWeight:600,color:"#D4A017",marginBottom:12}}>On-Grid Savings — PSE Virtual Power Plant</div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:14}}>
+              <div style={{background:"#0f0e00",borderRadius:8,padding:"8px 12px",textAlign:"center"}}>
+                <div style={{fontSize:20,fontWeight:700,color:"#FFD700"}}>${vpp10Year.toLocaleString()}</div>
+                <div style={{fontSize:10,color:"#8a7030",marginTop:2,textTransform:"uppercase"}}>10-year total</div>
+              </div>
+              <div style={{background:"#0f0e00",borderRadius:8,padding:"8px 12px",textAlign:"center"}}>
+                <div style={{fontSize:20,fontWeight:700,color:"#FFD700"}}>${vppAnnual.toLocaleString()}<span style={{fontSize:12,fontWeight:400}}>/yr</span></div>
+                <div style={{fontSize:10,color:"#8a7030",marginTop:2,textTransform:"uppercase"}}>annual recurring</div>
+              </div>
+            </div>
+            <div style={{fontSize:10,color:"#4a3800",marginBottom:10,textAlign:"center"}}>${vppOneTime.toLocaleString()} one-time incentive + up to ${vppAnnual.toLocaleString()}/battery/yr</div>
             <div style={{display:"flex",alignItems:"flex-end",gap:3,height:70}}>
-              {Array.from({length:10},(_,i)=>{const c=vppOneTime+vppAnnual*(i+1);return(
+              {Array.from({length:10},(_,i)=>{const cum=vppOneTime+vppAnnual*(i+1);return(
                 <div key={i} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:2}}>
-                  <div style={{width:"100%",height:`${Math.max(4,(c/vpp10Year)*60)}px`,background:"#D4A017",borderRadius:"2px 2px 0 0",opacity:0.8}}/>
+                  <div style={{width:"100%",height:`${Math.max(4,(cum/vpp10Year)*60)}px`,background:"#D4A017",borderRadius:"2px 2px 0 0",opacity:0.8}}/>
                   <div style={{fontSize:8,color:"#8a7030"}}>Y{i+1}</div>
                 </div>
               );})}
@@ -741,25 +730,15 @@ export default function BatteryProposalTool(){
           {/* System details + critical loads */}
           <div style={card}>
             <div style={{fontSize:12,fontWeight:600,color:"#a0aec0",marginBottom:10}}>System details</div>
-            {BATTERIES.filter(b=>(battSel[b.id]||0)>0).map(b=>(
-              <div key={b.id} style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:"1px solid #1a202c",fontSize:12}}>
-                <span style={{color:"#718096"}}>{b.name}</span>
-                <span style={{color:"#e2e8f0"}}>{battSel[b.id]} unit{battSel[b.id]!==1?"s":""} · {battSel[b.id]*b.energyKwh} kWh · {battSel[b.id]*b.powerKw} kW</span>
-              </div>
-            ))}
-            <div style={{display:"flex",justifyContent:"space-between",padding:"7px 0",fontSize:13,fontWeight:600}}>
-              <span style={{color:"#718096"}}>Total</span>
-              <span style={{color:"#F6AD55"}}>{Math.round(tKwh*10)/10} kWh · {Math.round(tKw*10)/10} kW</span>
+            <div style={{display:"flex",justifyContent:"space-between",padding:"6px 0",borderBottom:"1px solid #1a202c",fontSize:13,fontWeight:600}}>
+              <span style={{color:"#718096"}}>Energy storage</span>
+              <span style={{color:"#9AE6B4"}}>{Math.round(tKwh*10)/10} kWh</span>
             </div>
-            {hasSolar!==false&&solarKwDc&&<div style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderTop:"1px solid #1a202c",fontSize:12}}>
-              <span style={{color:"#718096"}}>Solar ({coupling.toUpperCase()}-coupled)</span>
-              <span style={{color:"#e2e8f0"}}>{solarKwDc} kW DC</span>
-            </div>}
-            {annualUsage>0&&<div style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderTop:"1px solid #1a202c",fontSize:12}}>
-              <span style={{color:"#718096"}}>Annual usage</span>
-              <span style={{color:"#e2e8f0"}}>{Math.round(annualUsage).toLocaleString()} kWh/yr</span>
-            </div>}
-            {priceNum>0&&<div style={{display:"flex",justifyContent:"space-between",padding:"7px 0",borderTop:"1px solid #1a202c",fontSize:13,fontWeight:600}}>
+            <div style={{display:"flex",justifyContent:"space-between",padding:"6px 0",borderBottom:"1px solid #1a202c",fontSize:13,fontWeight:600}}>
+              <span style={{color:"#718096"}}>Power output</span>
+              <span style={{color:"#68D391"}}>{Math.round(tKw*10)/10} kW</span>
+            </div>
+            {priceNum>0&&<div style={{display:"flex",justifyContent:"space-between",padding:"6px 0",borderBottom:"1px solid #1a202c",fontSize:13,fontWeight:600}}>
               <span style={{color:"#718096"}}>System price</span>
               <span style={{color:"#FFD700"}}>${priceNum.toLocaleString()}</span>
             </div>}
