@@ -222,6 +222,55 @@ function StepBar({current}){
   );
 }
 
+// ── mergeBreakers ────────────────────────────────────────────────────────────
+// Called immediately after Claude returns raw breaker data.
+// Strategy:
+//   1. Claude is now instructed to return 2-pole breakers as ONE entry.
+//      If it does, poles===2 and there is no duplicate — we keep it as-is.
+//   2. As a safety net: if Claude returns TWO entries for the same 2-pole
+//      breaker (same name, same column side, both poles===2), we merge them
+//      into the one with the lower slot number and count amps only once.
+//   3. If a 2-pole breaker has no partner at all (Claude got it right the
+//      first time), it passes through unchanged.
+// After merging, breakers are sorted by position so PanelGraphic renders
+// them in the correct physical order.
+function mergeBreakers(raw) {
+  const used = new Set();
+  const out  = [];
+
+  // Sort by position first so lower slot always wins when collapsing
+  const sorted = [...raw].sort((a, b) => (a.position||0) - (b.position||0));
+
+  for (let i = 0; i < sorted.length; i++) {
+    if (used.has(i)) continue;
+    const b = sorted[i];
+
+    if (b.poles === 2) {
+      // Look for a duplicate: same name, same column side (odd/even), also poles===2
+      const sideA = (b.position || 1) % 2; // 1=left-col, 0=right-col
+      const dupeIdx = sorted.findIndex((other, j) =>
+        j > i &&
+        !used.has(j) &&
+        other.poles === 2 &&
+        (other.position || 0) % 2 === sideA &&
+        other.name.trim().toLowerCase() === b.name.trim().toLowerCase()
+      );
+      if (dupeIdx !== -1) {
+        // Collapse: keep lower position (b), discard dupeIdx
+        used.add(dupeIdx);
+      }
+      // Whether or not a dupe was found, keep b (with poles:2) as one circuit
+      used.add(i);
+      out.push({ ...b });
+    } else {
+      used.add(i);
+      out.push({ ...b });
+    }
+  }
+
+  return out.sort((a, b) => (a.position||0) - (b.position||0));
+}
+
 // ── Main app ──────────────────────────────────────────────────────────────────
 export default function BatteryProposalTool(){
   const [step,setStep]=useState(0);
@@ -256,16 +305,9 @@ export default function BatteryProposalTool(){
 
   const critBreakers=breakers.filter(b=>b.critical);
   const allCritical=breakers.length>0&&critBreakers.length===breakers.length;
-  // For amp calculations, deduplicate 2-pole pairs: two breakers same name = one circuit counted once
-  const dedup=arr=>{
-    const seen=new Set(); return arr.filter(b=>{
-      if(b.poles!==2) return true;
-      const key=b.name.trim().toLowerCase();
-      if(seen.has(key)) return false; seen.add(key); return true;
-    });
-  };
-  const totalBreakerA=dedup(breakers).reduce((s,b)=>s+b.amps,0);
-  const critBreakerA=dedup(critBreakers).reduce((s,b)=>s+b.amps,0);
+  // breakers are already merged (one entry per circuit) — no dedup needed
+  const totalBreakerA=breakers.reduce((s,b)=>s+b.amps,0);
+  const critBreakerA=critBreakers.reduce((s,b)=>s+b.amps,0);
   const demandPct=totalBreakerA>0?Math.round(critBreakerA/totalBreakerA*100):0;
   const maxOutputA=critBreakerA>0?Math.round(critBreakerA/1.25*10)/10:0;
   const critPct=breakers.length>0?critBreakers.length/breakers.length:0;
@@ -323,7 +365,16 @@ export default function BatteryProposalTool(){
       const r=await callParsePanel(file);
       if(!r.breakers?.length)throw new Error("No breakers detected");
       if(r.mainAmps)setMainAmps(r.mainAmps);
-      setBreakers(r.breakers.map((b,i)=>({...b,id:`b_${i}`,name:b.name||"Unknown",critical:false,position:b.position||i+1,poles:b.poles||1})));
+      // Assign ids and defaults, then merge 2-pole pairs into single circuits
+      const raw=r.breakers.map((b,i)=>({
+        ...b,
+        id:`b_${i}`,
+        name:b.name||"Unknown",
+        critical:false,
+        position:b.position||i+1,
+        poles:b.poles||1,
+      }));
+      setBreakers(mergeBreakers(raw));
     }catch(e){setParseError(e.message);}finally{setParsingPanel(false);}
   };
 
