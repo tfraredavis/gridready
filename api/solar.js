@@ -18,48 +18,43 @@ export default async function handler(req, res) {
 
     // ── PARSE PANEL PHOTO ────────────────────────────────────────────────────
     // Sends electrical panel photo to Claude Vision.
-    // Returns array of { name, amps, estimatedWatts }
+    // Returns { mainAmps, breakers: [{ name, amps, position, poles }] }
     if (action === "parsePanel") {
       if (!ANTHROPIC_KEY) return res.status(500).json({ error: "ANTHROPIC_API_KEY not configured" });
       if (!imageBase64)   return res.status(400).json({ error: "imageBase64 required" });
 
       const prompt = `You are analyzing a photo of a residential electrical panel (breaker box).
 
-Your job is to identify every circuit breaker visible in the panel.
+Your job is to identify EVERY circuit breaker visible in the panel and their exact physical positions.
 
-For each breaker, extract:
-1. The label/name written on or next to it (e.g. "Kitchen", "HVAC", "Dryer", "Garage")
-2. The amperage rating printed on the breaker itself (e.g. 15, 20, 30, 50)
-3. Your best estimate of the typical running watts for that circuit type
+PANEL LAYOUT RULES:
+- Residential panels have two columns: LEFT column (odd slot numbers: 1, 3, 5, 7...) and RIGHT column (even slot numbers: 2, 4, 6, 8...)
+- Slot 1 is at the top-left, slot 2 is at the top-right, slot 3 is second from top on left, etc.
+- The main breaker at the top does NOT get a slot number
+- A SINGLE-POLE breaker occupies one slot
+- A DOUBLE-POLE (2-pole) breaker occupies two adjacent slots on the SAME side. Use the LOWER slot number as its position.
+- Double-pole breakers are used for 240V circuits (dryer, range, HVAC, water heater, EV charger).
 
-Rules:
-- If you cannot read a label clearly, use "Unknown"
-- Include ALL breakers you can see, including double-pole breakers (240V)
-- For double-pole breakers, note the full amperage (e.g. a 2-pole 30A = 30A)
-- Estimate running watts based on the circuit name and amperage:
-  * Lighting circuits (15A): 200-400W
-  * General outlets (15-20A): 300-500W  
-  * Kitchen outlets (20A): 500-1500W
-  * Refrigerator (20A): 150-200W
-  * Dishwasher (20A): 1200-1500W
-  * Microwave (20A): 1000-1500W
-  * Washer (20A): 500W
-  * Dryer (30A 240V): 4000-5500W
-  * Range/Oven (50A 240V): 3000-5000W
-  * HVAC/AC (varies): calculate from amps × voltage × 0.8
-  * Water heater (30A 240V): 3000-4500W
-  * EV charger (50A 240V): 7200W
-  * Garage (20A): 500W
-  * Outdoor (20A): 300W
+For each breaker extract:
+1. name: The label written on or next to it. Use "Unknown" if unreadable.
+2. amps: The amperage printed on the breaker.
+3. position: The slot number (odd for left column, even for right column). Start at 1 for top-left.
+4. poles: 1 for single-pole, 2 for double-pole/240V breakers.
 
-Respond ONLY with valid JSON in this exact format, no other text:
+Also extract mainAmps: the amperage of the main disconnect (usually 100, 150, 200, or 225A).
+
+Respond ONLY with valid JSON, no other text:
 {
+  "mainAmps": 200,
   "breakers": [
-    { "name": "Kitchen", "amps": 20, "estimatedWatts": 1200 },
-    { "name": "Master Bedroom", "amps": 15, "estimatedWatts": 300 },
-    { "name": "Unknown", "amps": 20, "estimatedWatts": 400 }
+    { "name": "Kitchen Outlets", "amps": 20, "position": 1, "poles": 1 },
+    { "name": "Living Room", "amps": 15, "position": 2, "poles": 1 },
+    { "name": "Dryer", "amps": 30, "position": 5, "poles": 2 },
+    { "name": "Unknown", "amps": 20, "position": 9, "poles": 1 }
   ]
-}`;
+}
+
+Return ALL visible breakers sorted by position ascending.`;
 
       try {
         const r = await fetch("https://api.anthropic.com/v1/messages", {
