@@ -29,32 +29,43 @@ Your job is to identify EVERY circuit breaker visible in the panel and their exa
 
 PANEL LAYOUT RULES:
 - Residential panels have two columns: LEFT column (odd slot numbers: 1, 3, 5, 7...) and RIGHT column (even slot numbers: 2, 4, 6, 8...)
-- Slot 1 is at the top-left, slot 2 is at the top-right, slot 3 is second from top on left, etc.
-- The main breaker at the top does NOT get a slot number
-- A SINGLE-POLE breaker occupies one slot
-- A DOUBLE-POLE (2-pole) breaker occupies two adjacent slots on the SAME side. Use the LOWER slot number as its position.
-- Double-pole breakers are used for 240V circuits (dryer, range, HVAC, water heater, EV charger).
+- Slot 1 is at the top-left, slot 2 is at the top-right, slot 3 is second from top left, slot 4 is second from top right, etc.
+- The main disconnect breaker at the very top does NOT get a slot number — return it only as "mainAmps".
 
-For each breaker extract:
-1. name: The label written on or next to it. Use "Unknown" if unreadable.
-2. amps: The amperage printed on the breaker.
-3. position: The slot number (odd for left column, even for right column). Start at 1 for top-left.
-4. poles: 1 for single-pole, 2 for double-pole/240V breakers.
+CRITICAL RULE FOR 2-POLE (240V) BREAKERS:
+- A 2-pole breaker physically spans two adjacent slots on the SAME column (e.g. slots 5+7 on the left, or slots 4+6 on the right).
+- You MUST return a 2-pole breaker as EXACTLY ONE entry in the breakers array — NOT two entries.
+- Use the LOWER slot number as its position.
+- Set poles: 2.
+- The amps value is the rating printed on the breaker handle (e.g. 30 for a 30A 2-pole breaker).
+- Common 2-pole circuits: Dryer (30A), Range/Oven (50A), HVAC/AC (varies), Water Heater (30A), EV Charger (50A), Hot Tub (50A), Subpanel (60-100A).
 
-Also extract mainAmps: the amperage of the main disconnect (usually 100, 150, 200, or 225A).
+For each breaker return:
+1. name: Label written on or next to it. Use "Unknown" if unreadable.
+2. amps: Amperage rating printed on the breaker.
+3. position: Slot number. Odd = left column, Even = right column. Start at 1 (top-left).
+4. poles: 1 for single-pole, 2 for double-pole. If you are unsure, check if the breaker is physically wider or has two toggle handles — those are 2-pole.
+
+Also return:
+- mainAmps: Amperage of the main disconnect (typically 100, 150, 200, or 225A).
 
 Respond ONLY with valid JSON, no other text:
 {
   "mainAmps": 200,
   "breakers": [
     { "name": "Kitchen Outlets", "amps": 20, "position": 1, "poles": 1 },
-    { "name": "Living Room", "amps": 15, "position": 2, "poles": 1 },
-    { "name": "Dryer", "amps": 30, "position": 5, "poles": 2 },
-    { "name": "Unknown", "amps": 20, "position": 9, "poles": 1 }
+    { "name": "Living Room",     "amps": 15, "position": 2, "poles": 1 },
+    { "name": "Dryer",           "amps": 30, "position": 5, "poles": 2 },
+    { "name": "Range",           "amps": 50, "position": 4, "poles": 2 },
+    { "name": "Unknown",         "amps": 20, "position": 9, "poles": 1 }
   ]
 }
 
-Return ALL visible breakers sorted by position ascending.`;
+Important rules:
+- Include ALL visible breakers.
+- Each 2-pole breaker appears EXACTLY ONCE as a single entry with poles:2.
+- Sort by position ascending.
+- Do not return two entries with the same name and poles:2 — that would be wrong.`;
 
       try {
         const r = await fetch("https://api.anthropic.com/v1/messages", {
